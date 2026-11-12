@@ -1,0 +1,11 @@
+# Fonts and GIFs are binary; keep them untouched.
+*.woff2 binary
+*.ttf binary
+*.gif binary
+*.png binary
+
+# Scripts and styles ship as LF so they behave the same on every host.
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf

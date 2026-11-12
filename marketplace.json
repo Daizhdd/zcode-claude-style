@@ -1,0 +1,26 @@
+{
+  "name": "zcode-claude-style",
+  "owner": "Daizhdd",
+  "plugins": [
+    {
+      "name": "zcode-claude-style",
+      "description": "Claude Code Desktop look for the ZCode desktop client: warm editorial colour cards, Source Serif 4 + Noto Serif SC typography, Deepy whale, and a sidebar settings page. Design tokens ported from dsh-claude-style by Nwflower.",
+      "description_i18n": {
+        "en": "Claude Code Desktop look for the ZCode desktop client: warm editorial colour cards, Source Serif 4 + Noto Serif SC typography, Deepy whale, and a sidebar settings page.",
+        "zh-CN": "ZCode 桌面端的 Claude Code 风格皮肤：暖色编辑风色卡、思源宋体排版、Deepy 鲸鱼，以及侧栏设置页。设计令牌移植自 dsh-claude-style（by Nwflower）。"
+      },
+      "version": "0.9.0",
+      "author": "Daizhdd",
+      "license": "MIT",
+      "homepage": "https://github.com/Daizhdd/zcode-claude-style",
+      "keywords": [
+        "theme",
+        "claude-code",
+        "appearance",
+        "serif"
+      ],
+      "source": "./"
+    }
+  ],
+  "version": "0.9.0"
+}

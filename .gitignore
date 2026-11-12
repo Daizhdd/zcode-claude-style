@@ -1,0 +1,13 @@
+# Injected payloads and screenshots are build artefacts, not source.
+.preview/
+verify.log
+*.log
+
+# Scratch
+.tmp*
+tmp/
+.candidates/
+
+node_modules/
+.DS_Store
+Thumbs.db
