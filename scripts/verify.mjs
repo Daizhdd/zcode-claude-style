@@ -414,9 +414,14 @@ console.log("\n[4d] 字体族：思源宋体 + Source Serif 4");
     ["字体栈里有中文字体（Noto Serif SC）", serif.includes('"Noto Serif SC"')],
     ["中文字体排在西文之前之外的兜底位置", /--font-sans: .*"ZCS Serif".*"Noto Serif SC"/.test(serif)],
     ["衬线表只覆写 --font-sans（不接管 --font-mono）", !serif.includes("--font-mono")],
-    ["衬线表不再挑标题选择器", !serif.includes(".prose")],
+    // Face is decided by the variable alone; the sheet's .prose rules are the
+    // dark-mode weight compensation and must not set font-family.
+    ["字体族只经 --font-sans 下发，不逐个元素挑字体", !/font-family\s*:/.test(serif)],
     ["光学尺寸轴启用（font-optical-sizing）", serif.includes("font-optical-sizing: auto")],
     ["深色下做字重逆补偿", /html\.dark \{[\s\S]*--font-weight-normal: 360/.test(serif)],
+    // The variables alone are inert: the host paints prose with literal weights.
+    ["补偿落到实际绘制文字的选择器上", /html\.dark \.prose[\s\S]*font-weight: var\(--font-weight-normal\)/.test(serif)],
+    ["标题跟着降一档（semibold）", /html\.dark \.prose :is\(h1[\s\S]*--font-weight-semibold/.test(serif)],
     ["补偿幅度与 Claude 一致（−40 / −40 / −50）", /normal: 360[\s\S]*medium: 460[\s\S]*semibold: 550/.test(serif)],
     ["配色表仍声明无衬线默认（关掉开关用）", sans.includes("--font-sans:") && sans.includes("ZCS Inter")],
     ["字重与字距留在配色表（切字体不跳字距）", /letter-spacing: -0\.011em/.test(sans)],
@@ -503,6 +508,40 @@ console.log("\n[6] 运行时自检");
   const host = fs.readFileSync(path.join(ROOT, "src", "mcp", "server.mjs"), "utf8");
   if (/status\.styleId\s*!==\s*current/.test(host)) pass("巡检比对样式指纹，过期即补注入");
   else fail("巡检只看「有没有样式表」，插件的样式改动不会自动生效");
+
+  // Cost control: the watch loop used to reuse the injection path, so every
+  // 4-second probe also enabled Runtime + Page and registered a script. Measured
+  // 22.9ms per probe against 12ms for a bare evaluate.
+  const cdp = fs.readFileSync(path.join(ROOT, "src", "lib", "cdp.mjs"), "utf8");
+  const injectSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "inject.mjs"), "utf8");
+  // Take the function body only — slicing up to the next `export` would pull in
+  // that function's doc comment and match the very strings we are hunting for.
+  const probeMatch = /export async function probeInTarget[\s\S]*?\n}\n/.exec(cdp);
+  const probeBody = probeMatch ? probeMatch[0] : "";
+  if (probeBody && !/Runtime\.enable|Page\.enable|addScriptToEvaluateOnNewDocument/.test(probeBody)) {
+    pass("只读探针不启用任何 CDP domain、不注册脚本");
+  } else {
+    fail("只读探针仍在 enable domain / 注册脚本，巡检成本翻倍");
+  }
+  if (/probeInTarget\(targets\[0\], STATUS_SOURCE\)/.test(injectSrc)) {
+    pass("readStatus 走只读探针而不是注入路径");
+  } else {
+    fail("readStatus 仍在复用 evaluateInTarget");
+  }
+  const healthy = /ZCS_WATCH_INTERVAL \|\| (\d+)/.exec(host);
+  const recover = /ZCS_WATCH_RECOVER \|\| (\d+)/.exec(host);
+  const idle = /ZCS_WATCH_IDLE \|\| (\d+)/.exec(host);
+  if (healthy && Number(healthy[1]) >= 20000) pass(`健康巡检间隔 ${healthy[1]}ms（不再是 4 秒）`);
+  else fail("健康巡检间隔仍过短");
+  if (recover && Number(recover[1]) <= 3000) pass(`皮肤缺失时 ${recover[1]}ms 快恢复`);
+  else fail("缺少快恢复间隔，窗口重载后要等很久");
+  if (idle && Number(idle[1]) >= 5000) pass(`无调试端口时退避到 ${idle[1]}ms`);
+  else fail("无端口时仍在高频重试");
+  if (/const tick = async \(\) =>/.test(host) && /setTimeout\(tick/.test(host)) {
+    pass("巡检自调度（每轮自己决定下一次延迟）");
+  } else {
+    fail("仍是固定 setInterval，无法双速");
+  }
 
   // Regression: without a build stamp the host and the CLI overwrite each other
   // every four seconds, and the skin visibly flickers between two builds.

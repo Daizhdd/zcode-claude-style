@@ -11,7 +11,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCss, buildFontFaceCss, buildPanelCss, motionCss, serifCss } from "../theme/css.mjs";
 import { CARDS } from "../theme/palette.mjs";
-import { listTargets, pickRendererTargets, evaluateInTarget, CdpConnection } from "./cdp.mjs";
+import {
+  listTargets,
+  pickRendererTargets,
+  evaluateInTarget,
+  probeInTarget,
+  CdpConnection,
+} from "./cdp.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..", "..");
@@ -242,7 +248,9 @@ export async function resetRunning(config) {
 export async function readStatus(config) {
   const targets = pickRendererTargets(await listTargets(config.port));
   if (targets.length === 0) return null;
-  const raw = await evaluateInTarget(targets[0], STATUS_SOURCE);
+  // Read-only: the watch loop calls this every few seconds, so it must not
+  // enable domains or register scripts the way the injection path does.
+  const raw = await probeInTarget(targets[0], STATUS_SOURCE);
   try {
     return JSON.parse(raw);
   } catch {

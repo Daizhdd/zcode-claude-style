@@ -301,13 +301,31 @@ Claude 官网用的是私有字体（`anthropic-serif` 家族名，Tiempos 一�
 
 1. **MCP 工具**（ZCode 的 Agent 可调用）：`claude_style_status` / `_apply` / `_reset` /
    `_launch` / `_watch` —— 用户在对话里说"换成 DeepSeek 色卡"，agent 直接调工具；
-2. **启动即注入**：ZCode 一开、端口一通，4 秒内皮肤就回来；
-3. **巡检**：每 4 秒确认皮肤还在，窗口重载（注入被清掉）自动补上。
+2. **启动即注入**：ZCode 一开、端口一通，皮肤就回来了；
+3. **巡检**：确认皮肤还在，窗口重载（注入被清掉）自动补上。
 
 ```bash
 node src/cli.mjs resident status   # 看 host 在不在、最近的日志
 node src/cli.mjs resident off      # 停掉残留的 host（重启 ZCode 会重新拉起）
 ```
+
+### 巡检是双速的
+
+两种情况的代价完全不同，所以间隔也不同：
+
+| 状态 | 间隔 | 为什么 |
+| --- | --- | --- |
+| 皮肤在线 | `30s` | 单次探测 11.8ms，30 秒一次 ≈ 每天 34 秒。皮肤不会自己衰减，勤查没有收益 |
+| 皮肤丢失 / 刚修复 | `2s` | 窗口重载后注入脚本随 CDP 会话一起消失，这个等待用户看得见 |
+| 没有调试端口 | `10s` | 失败是瞬时的，而且用户可能一整场都这样开着 |
+
+三个值都能用环境变量覆盖：`ZCS_WATCH_INTERVAL` / `ZCS_WATCH_RECOVER` / `ZCS_WATCH_IDLE`。
+
+探测走**只读路径**：一条 `Runtime.evaluate`，不 enable 任何 CDP domain、不注册脚本。
+早先它复用了注入函数，每次顺带执行 `Runtime.enable` + `Page.enable` +
+`addScriptToEvaluateOnNewDocument`，实测 22.9ms/次；瘦身后 11.8ms，已经贴近纯 evaluate 的
+10ms 下限（剩下的基本是本地 HTTP 拿 target 列表）。配合 30 秒间隔，每天的巡检开销从
+约 8 分钟降到约 34 秒。
 
 MCP 协议是**零依赖手写**的（纯 JSON-RPC over stdio）：插件要在裸 `node` 下跑，
 不该为了一个握手引入 SDK。代价是 stdout 只能写 JSON-RPC 帧，任何 `console.log`

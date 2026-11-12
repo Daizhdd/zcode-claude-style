@@ -385,6 +385,12 @@ html {
  * text on a dark ground reads 10-15% heavier than the same weight on paper, so
  * the axis is pulled back about 40 units in the dark scheme.
  *
+ * Overriding the font-weight tokens alone is not enough: ZCode writes a literal
+ * font-weight 400 on prose paragraphs (verified — the computed weight stayed
+ * 400 while the variable read 360), so the adjustment has to land on the
+ * selectors that actually paint text. It is scoped to the reading area on
+ * purpose; UI labels at 12-13px only get blurrier when thinned.
+ *
  * This only works because every face here is variable. A static face would snap
  * to the nearest master and the compensation would be a no-op.
  *
@@ -395,6 +401,14 @@ html.dark {
   --font-weight-normal: 360 !important;
   --font-weight-medium: 460 !important;
   --font-weight-semibold: 550 !important;
+}
+
+html.dark .prose,
+html.dark .prose :is(p, li, dd, td, blockquote) {
+  font-weight: var(--font-weight-normal) !important;
+}
+html.dark .prose :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: var(--font-weight-semibold) !important;
 }`;
 }
 

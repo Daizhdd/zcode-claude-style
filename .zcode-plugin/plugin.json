@@ -1,6 +1,6 @@
 {
   "name": "zcode-claude-style",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Claude Code Desktop 风格的 ZCode 桌面皮肤：暖色编辑风色卡、思源宋体衬线、Deepy 鲸鱼、侧栏「cc-风格」设置页。设计令牌移植自 dsh-claude-style（by Nwflower）。附带常驻 MCP host —— 随 ZCode 启动自动拉起并在窗口重载后自动补注入。",
   "author": {
     "name": "Daizhdd",

@@ -118,6 +118,37 @@ export class CdpConnection {
 }
 
 /**
+ * Read-only probe: one `Runtime.evaluate`, nothing else.
+ *
+ * Deliberately does NOT enable any domain and does NOT register a script. The
+ * resident host calls this every few seconds just to ask "is the skin still
+ * there?", and the injection path's extra three commands (`Runtime.enable`,
+ * `Page.enable`, `addScriptToEvaluateOnNewDocument`) cost about as much as the
+ * evaluate itself — measured 22.9ms per probe versus 12ms for this shape.
+ * `Runtime.enable` in particular makes the renderer enumerate execution
+ * contexts and start tracking heap objects, which is real work to do every few
+ * seconds for a yes/no answer.
+ */
+export async function probeInTarget(target, expression) {
+  const conn = await CdpConnection.connect(target.webSocketDebuggerUrl);
+  try {
+    const result = await conn.send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: false,
+    });
+    if (result?.exceptionDetails) {
+      throw new CdpError(
+        `渲染进程求值失败: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`
+      );
+    }
+    return result?.result?.value;
+  } finally {
+    conn.close();
+  }
+}
+
+/**
  * Injects `source` into a renderer: it runs now and again on every reload
  * (`addScriptToEvaluateOnNewDocument` stays registered for this session).
  */

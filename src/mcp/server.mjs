@@ -25,9 +25,25 @@ import { CARDS } from "../theme/palette.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LOG_FILE = path.join(dataDir(), "mcp.log");
-const WATCH_MS = Number(process.env.ZCS_WATCH_INTERVAL || 4000);
+/*
+ * Two speeds, because the two situations have nothing in common in cost terms.
+ *
+ * Healthy: the probe costs ~12ms (one local HTTP call plus one Runtime.evaluate
+ * over a fresh websocket). Every 4 seconds that is 21 600 wakes a day for an
+ * answer that changes maybe twice. 30s is 2 880, and nothing visible is lost —
+ * the skin does not decay on its own.
+ *
+ * Broken: a window reload drops the injected stylesheet and there is nothing to
+ * restore from (the injected script dies with its CDP session), so the wait is
+ * user-visible. Two seconds makes that recovery feel immediate.
+ */
+const WATCH_HEALTHY_MS = Number(process.env.ZCS_WATCH_INTERVAL || 30000);
+const WATCH_RECOVER_MS = Number(process.env.ZCS_WATCH_RECOVER || 2000);
+// No debug port at all: the failure is instant and the user may leave it this way
+// for a whole session, so back off rather than retry every two seconds.
+const WATCH_IDLE_MS = Number(process.env.ZCS_WATCH_IDLE || 10000);
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "zcode-claude-style", version: "0.9.0" };
+const SERVER_INFO = { name: "zcode-claude-style", version: "0.9.1" };
 
 let watchTimer = null;
 let lastState = null;
@@ -71,13 +87,13 @@ function replyError(id, code, message) {
  * settings UI down with it.
  */
 async function watchPass() {
-  if (!watcherOn) return;
+  if (!watcherOn) return WATCH_HEALTHY_MS;
   const config = loadConfig();
   try {
     const status = await readStatus(config);
     if (!status) {
       stateOnce("no-target", "CDP up, no renderer target yet");
-      return;
+      return WATCH_IDLE_MS;
     }
     if (status.skin) {
       /*
@@ -89,7 +105,7 @@ async function watchPass() {
        * The timestamp guard is what keeps two injectors civil: this host only
        * takes over a window stamped earlier than its own build. Without it, a
        * host left running from an older plugin build would see a newer sheet,
-       * call it stale, and overwrite it — in a loop, every four seconds.
+       * call it stale, and overwrite it — in a loop.
        */
       const current = styleId();
       const mineAt = buildAt();
@@ -100,7 +116,8 @@ async function watchPass() {
           `stale:${current}`,
           `stylesheet moved to ${current} — re-injected ${result.applied}/${result.total}`
         );
-        return;
+        // Come back soon to confirm the push actually took.
+        return WATCH_RECOVER_MS;
       }
       if (status.styleId !== current) {
         // Someone newer than us owns this window. Stand down and say so once.
@@ -108,20 +125,24 @@ async function watchPass() {
           `newer:${status.styleId}`,
           `window carries a newer skin (${status.styleId}) — leaving it alone`
         );
-        return;
+        return WATCH_HEALTHY_MS;
       }
       stateOnce(`ok:${status.skin}:${status.scheme}`, `skin online (${status.skin}/${status.scheme})`);
-      return;
+      return WATCH_HEALTHY_MS;
     }
     const result = await applyToRunning(config);
     stateOnce("injected", `injected into ${result.applied}/${result.total} renderer(s)`);
+    return WATCH_RECOVER_MS;
   } catch (err) {
     const msg = String(err?.message || err).split("\n")[0];
     if (/连不上|CDP/.test(msg)) {
       stateOnce("no-port", "waiting for a debug port");
-    } else {
-      stateOnce(`error:${msg}`, `error: ${msg}`);
+      // A closed port is a fast failure; no point hammering it, and the user may
+      // sit like this for hours if they launched ZCode without the flag.
+      return WATCH_IDLE_MS;
     }
+    stateOnce(`error:${msg}`, `error: ${msg}`);
+    return WATCH_RECOVER_MS;
   }
 }
 
@@ -183,17 +204,29 @@ function startWatch() {
   }
   if (lastState === "deferred") lastState = null;
 
-  watchPass();
-  watchTimer = setInterval(watchPass, WATCH_MS);
-  // Do not hold the event loop open on its own: stdin keeps the process alive,
-  // and this timer must not become the reason it never exits.
+  if (lastState === "deferred") lastState = null;
+
+  // Self-scheduling rather than setInterval: each pass decides its own next
+  // delay, which is what makes the two speeds possible (30s healthy, 2s while
+  // something is actually broken). A fixed interval cannot express that.
+  const tick = async () => {
+    const delay = await watchPass();
+    if (!watcherOn) return;
+    watchTimer = setTimeout(tick, Number.isFinite(delay) ? delay : WATCH_HEALTHY_MS);
+    // Do not hold the event loop open on its own: stdin keeps the process alive,
+    // and this timer must not become the reason it never exits.
+    watchTimer.unref?.();
+  };
+  watchTimer = setTimeout(tick, 0);
   watchTimer.unref?.();
-  log(`watch loop started (${WATCH_MS}ms, pid ${process.pid})`);
+  log(
+    `watch loop started (healthy ${WATCH_HEALTHY_MS}ms / recover ${WATCH_RECOVER_MS}ms / idle ${WATCH_IDLE_MS}ms, pid ${process.pid})`
+  );
 }
 
 function stopWatch() {
   watcherOn = false;
-  if (watchTimer) clearInterval(watchTimer);
+  if (watchTimer) clearTimeout(watchTimer);
   watchTimer = null;
   releaseWatchLock();
   log("watch loop stopped");
@@ -404,9 +437,10 @@ async function main() {
   startWatch();
   // If another host owns the poll loop, keep retrying the lock so this one takes
   // over within a few seconds of that host exiting (session closed, crash).
+  // Fixed 5s: this is a cheap file read plus a pid probe, not a CDP round trip.
   setInterval(() => {
     if (!watchTimer) startWatch();
-  }, WATCH_MS).unref?.();
+  }, 5000).unref?.();
 
   let buffer = "";
   process.stdin.setEncoding("utf8");
