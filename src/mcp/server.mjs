@@ -20,7 +20,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig, dataDir } from "../lib/config.mjs";
 import { applyToRunning, buildAt, readStatus, resetRunning, styleId } from "../lib/inject.mjs";
-import { launchWithDebugPort, probePort } from "../lib/launcher.mjs";
+import { launchWithDebugPort } from "../lib/launcher.mjs";
+import { resolvePort } from "../lib/cdp.mjs";
 import { CARDS } from "../theme/palette.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -301,15 +302,19 @@ async function callTool(name, args) {
       const config = loadConfig();
       let live = null;
       let portUp = false;
+      // Report the port that actually answered, not the pinned one: the two
+      // diverge whenever ZCode was launched without --remote-debugging-port.
+      let activePort = null;
       try {
-        portUp = await probePort(config.port);
-        live = portUp ? await readStatus(config) : null;
+        activePort = await resolvePort(config.port);
+        portUp = activePort !== null;
+        live = portUp ? await readStatus({ ...config, port: activePort }) : null;
       } catch (err) {
         live = { error: String(err.message || err) };
       }
       return text({
         config,
-        port: config.port,
+        port: activePort ?? config.port,
         portUp,
         applied: Boolean(live?.skin),
         live,

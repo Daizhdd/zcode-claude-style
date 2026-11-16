@@ -13,11 +13,28 @@ import { buildCss, buildFontFaceCss, buildPanelCss, motionCss, serifCss } from "
 import { CARDS } from "../theme/palette.mjs";
 import {
   listTargets,
+  resolvePort,
   pickRendererTargets,
   evaluateInTarget,
   probeInTarget,
   CdpConnection,
 } from "./cdp.mjs";
+
+/**
+ * The port to talk to: the configured one when it answers, else whichever
+ * well-known port ZCode was actually launched with. Throws only when nothing
+ * answers at all, which is what the watch loop renders as "waiting for a
+ * debug port".
+ */
+async function targetsFor(config) {
+  const port = await resolvePort(config.port);
+  if (port === null) {
+    throw new Error(
+      `连不上 CDP（试过 ${[config.port, 9222, 9229].join(" / ")}）—— ZCode 需要以 --remote-debugging-port 启动`
+    );
+  }
+  return pickRendererTargets(await listTargets(port));
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..", "..");
@@ -184,7 +201,7 @@ export function buildInjectionSource(config) {
 }
 
 export async function applyToRunning(config) {
-  const targets = pickRendererTargets(await listTargets(config.port));
+  const targets = await targetsFor(config);
   if (targets.length === 0) {
     throw new Error("在调试端口上没找到 ZCode 的聊天渲染进程");
   }
@@ -238,7 +255,7 @@ const STATUS_SOURCE = `(() => {
 })()`;
 
 export async function resetRunning(config) {
-  const targets = pickRendererTargets(await listTargets(config.port));
+  const targets = await targetsFor(config);
   for (const target of targets) {
     await evaluateInTarget(target, RESET_SOURCE);
   }
@@ -246,7 +263,7 @@ export async function resetRunning(config) {
 }
 
 export async function readStatus(config) {
-  const targets = pickRendererTargets(await listTargets(config.port));
+  const targets = await targetsFor(config);
   if (targets.length === 0) return null;
   // Read-only: the watch loop calls this every few seconds, so it must not
   // enable domains or register scripts the way the injection path does.
@@ -263,7 +280,7 @@ export async function readStatus(config) {
  * to the real DOM without a screen capture tool.
  */
 export async function captureScreenshot(config, outFile) {
-  const targets = pickRendererTargets(await listTargets(config.port));
+  const targets = await targetsFor(config);
   if (targets.length === 0) throw new Error("没有可截图的 ZCode 窗口");
   const conn = await CdpConnection.connect(targets[0].webSocketDebuggerUrl);
   try {

@@ -9,6 +9,17 @@
 
 export class CdpError extends Error {}
 
+/**
+ * Ports worth probing, in the order they are tried after the configured one.
+ *
+ * Which port ZCode listens on depends on how it was launched: a shortcut that
+ * carries --remote-debugging-port=9222 opens 9222, while a plain launch leaves
+ * the port to whoever injects it — the token status bar plugin opens 9229. A
+ * single pinned port therefore goes silent on every restart of the other kind,
+ * which looks exactly like "the skin disappeared" with no error anywhere.
+ */
+export const PORT_CANDIDATES = [9222, 9229];
+
 export async function listTargets(port, host = "127.0.0.1") {
   let res;
   try {
@@ -22,6 +33,26 @@ export async function listTargets(port, host = "127.0.0.1") {
   }
   if (!res.ok) throw new CdpError(`CDP /json/list 返回 HTTP ${res.status}`);
   return res.json();
+}
+
+/**
+ * Finds the port ZCode is actually listening on: the configured one first, then
+ * the well-known fallbacks. Returns null when nothing answers, so callers can
+ * keep their "no debug port" path instead of throwing mid-watch loop.
+ */
+export async function resolvePort(preferred, candidates = PORT_CANDIDATES, host = "127.0.0.1") {
+  const order = [preferred, ...candidates].filter(
+    (port, i, all) => Number.isInteger(port) && port > 0 && all.indexOf(port) === i
+  );
+  for (const port of order) {
+    try {
+      const targets = await listTargets(port, host);
+      if (targets.length > 0) return port;
+    } catch {
+      // Closed or not CDP: try the next candidate.
+    }
+  }
+  return null;
 }
 
 /** The main chat window; helper pages and devtools are skipped. */

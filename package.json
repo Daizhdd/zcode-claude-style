@@ -1,6 +1,6 @@
 {
   "name": "zcode-claude-style",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Claude Code Desktop theme for the ZCode desktop client — warm editorial colour cards, serif display, Deepy mascot, live switcher panel.",
   "type": "module",
   "license": "MIT",

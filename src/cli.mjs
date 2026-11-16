@@ -18,6 +18,7 @@ import { CARDS } from "./theme/palette.mjs";
 import { loadConfig, saveConfig, configFile, dataDir } from "./lib/config.mjs";
 import { launchWithDebugPort, isZcodeRunning, findZcodeExecutable } from "./lib/launcher.mjs";
 import { applyToRunning, resetRunning, readStatus, captureScreenshot } from "./lib/inject.mjs";
+import { resolvePort } from "./lib/cdp.mjs";
 
 const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets");
 
@@ -109,6 +110,12 @@ async function cmdStatus() {
   console.log(`ZCode     ${findZcodeExecutable() || "未找到"}`);
   console.log(`进程      ${(await isZcodeRunning()) ? "运行中" : "未运行"}`);
   console.log(describe(config));
+  // Report the port that answered: it is 9229 whenever ZCode was launched
+  // without --remote-debugging-port and the token plugin supplied the port.
+  const activePort = await resolvePort(config.port).catch(() => null);
+  if (activePort !== null && activePort !== config.port) {
+    console.log(`实际端口 ${activePort}（配置为 ${config.port}，已自动匹配）`);
+  }
   try {
     const status = await readStatus(config);
     if (!status) {
